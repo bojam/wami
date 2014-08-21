@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>wami record demo</title>
+<style>
+body{text-align:center}
+img{border:none}
+.wrapper{margin:300px auto 0 auto; width:460px}
+.search{float: left; height: 36px;width:400px;border:2px solid #D2423B;font-size: 28px;}
+.popup-win{width:98%;height:80%;position:absolute; display:none;background:#fff}
+.popup-div{width:100%;height:100%; padding-top:100px;text-align:center}
+.popup-div .record-tips{font-size:28px;}
+.cm-btn-closed{width:27px;height:25px;position:absolute; right:0; top:0;font-size: 31px;text-decoration: none;color:#333;}
+.cm-btn-closed:hover{ background-position:-255px -490px;}
+</style>
+</head>
+
+<body>
+	<div class="wrapper">
+		<input type="text" class="search" id="search"/>
+		<a href="javascript:showDialog.show({id:'popupWraper',bgcolor:'#fff',opacity:100});Record.record()"><img id="record" src="record.png" height="42"/></a>
+	</div>
+	<div class="popup-win" id="popupWraper">
+		<a class="cm-btn-closed" title="close" href="javascript:" onClick="javascript:showDialog.hide()">x</a>
+		<div class="popup-div">
+			<a href="javascript:Record.record()"><img class="record-btn" src="record.png"></a><br/>
+			<span id="status" class="record-tips"></span></div>
+	</div>
+	<div id="wami"></div>
+</body>
+<script type="text/javascript" src="swfobject.js"></script>
+<script type="text/javascript" src="recorder.js"></script>
+<script type="text/javascript" src="jquery-1.7.1.min.js"></script>
+<script type="text/javascript" src="showDialog.min.js"></script> 
+
+<script>
+var console = console || {
+	log: function(){
+		return false;
+	}
+};
+var Record = {
+
+	fileStamp: new Date().getTime(),
+	timeoutFlag: 0,
+
+	setup: function(){
+		Record.reset();
+		Wami.setup("wami");
+	},
+
+	getNowUnixTime: function(){
+		return parseInt(new Date().getTime()/1000);
+	},
+
+	reset: function(){
+		Record.startVolume = -1;
+		Record.startRecordTime = 0;
+		Record.lastSpokenTime = 0;
+		Record.isRecording = false;
+		Record.hasSpoken = false;
+		clearTimeout(Record.timeoutFlag);
+	},
+	
+	record: function(){
+		if (Record.isRecording) {
+			Wami.stopRecording();
+			Record.reset();
+			return;
+		}
+		if (Record.isTranslating) {
+			return;
+		}
+		Record.status("正在初始化...");
+		setTimeout(function(){
+			Wami.setSettings({sampleRate:16000});
+			Wami.startRecording("wami.php?action=record&name="+Record.fileStamp, "Record.work()", "Record.translate()", "Record.reset()");
+		}, 500);
+		Record.timeoutFlag = setTimeout(function(){
+			Record.status("初始化失败，请刷新页面重试");
+		}, 5000);
+	},
+
+	play: function(){
+		Wami.startPlaying("play?name="+Record.fileStamp);
+	},
+
+	work: function(){
+		var volume = Wami.getRecordingLevel();
+		console.log(volume);
+
+		if (Record.startRecordTime == 0) {
+			clearTimeout(Record.timeoutFlag);
+			Record.status("请开始说话");
+			Record.startRecordTime = Record.lastSpokenTime = Record.getNowUnixTime();
+			Record.isRecording = true;
+		}
+
+		if (Record.startVolume == -1) {
+			Record.startVolume = volume;
+		}
+
+		var nowTime = Record.getNowUnixTime();
+		if (!Record.hasSpoken && nowTime-Record.lastSpokenTime>5) {
+			console.log("No voice");
+			Record.reset();
+			Wami.stopRecording();
+			showDialog.hide();
+			return ;
+		} else if (Record.hasSpoken && (nowTime-Record.startRecordTime>5 || nowTime-Record.lastSpokenTime>1)) {
+			console.log("Record success");
+			Wami.stopRecording();
+			return ;
+		} else if (Record.startVolume==0&&volume>=1 || Record.startVolume>0&&volume>10) {
+			console.log("Spoken");
+			Record.hasSpoken = true;
+			Record.lastSpokenTime = nowTime;
+		}
+		Record.status("正在收听...");
+		setTimeout(Record.work, 100);
+	},
+
+	translate: function(){
+		if (!Record.hasSpoken) return;
+		Record.reset();
+		Record.status("正在转换成文字...");
+		Record.isTranslating = true;
+		$.get("wami.php?action=translate&name="+Record.fileStamp, function(data) {
+			var msg = $.trim(data);
+			if (msg) {
+				showDialog.hide();
+				$('#search').val(msg);
+				$('#search').focus();
+				Record.isTranslating = false;
+			} else {
+				Record.status("不确定所说内容，请点击重试");
+				Record.isTranslating = false;
+			}
+		});
+	},
+
+	status: function(msg){
+		$('#status').html(msg);
+	}
+}
+
+window.onload = Record.setup;
+</script>
+</html>
